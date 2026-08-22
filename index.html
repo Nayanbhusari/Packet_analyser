@@ -1,0 +1,935 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetScope Pro — Network Packet Analyzer</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root{--bg-deep:#050910;--bg-primary:#0a0f1a;--bg-secondary:#0f1629;--bg-card:#131c2e;--bg-card-hover:#192540;--border:#1c2a44;--border-light:#263552;--text-primary:#e8edf5;--text-secondary:#8fa3c4;--text-muted:#546580;--accent:#00ff88;--accent-dim:rgba(0,255,136,.1);--accent-mid:rgba(0,255,136,.3);--danger:#ff3060;--danger-dim:rgba(255,48,96,.12);--warning:#ffaa00;--warning-dim:rgba(255,170,0,.12);--info:#00aaff;--info-dim:rgba(0,170,255,.12)}
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Space Grotesk',sans-serif;background:var(--bg-deep);color:var(--text-primary);min-height:100vh;overflow-x:hidden}
+    body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(0,255,136,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,.02) 1px,transparent 1px);background-size:48px 48px;pointer-events:none;z-index:0}
+    .mono{font-family:'JetBrains Mono',monospace}
+    .card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px}
+    .stat-card{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:14px 18px;position:relative;overflow:hidden;transition:border-color .3s,transform .2s}
+    .stat-card:hover{border-color:var(--border-light);transform:translateY(-1px)}
+    .stat-card::after{content:'';position:absolute;bottom:0;left:0;right:0;height:2px;background:var(--accent);opacity:.4}
+    .stat-card.danger::after{background:var(--danger)}.stat-card.warning::after{background:var(--warning)}.stat-card.info::after{background:var(--info)}
+    .btn-primary{background:var(--accent);color:#050910;font-weight:600;padding:8px 18px;border-radius:8px;border:none;cursor:pointer;font-family:inherit;font-size:13px;transition:all .2s;display:inline-flex;align-items:center;gap:7px}
+    .btn-primary:hover{filter:brightness(1.15);transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,255,136,.25)}
+    .btn-primary.active{background:var(--danger);color:#fff}
+    .btn-primary.active:hover{box-shadow:0 4px 20px rgba(255,48,96,.3)}
+    .btn-primary:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
+    .btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid var(--border);padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:13px;transition:all .2s;display:inline-flex;align-items:center;gap:7px}
+    .btn-ghost:hover{border-color:var(--border-light);color:var(--text-primary);background:var(--bg-card)}
+    .btn-ghost:disabled{opacity:.5;cursor:not-allowed}
+    select,.filter-input{background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);padding:7px 12px;border-radius:7px;font-family:inherit;font-size:13px;outline:none;transition:border-color .2s}
+    select:focus,.filter-input:focus{border-color:var(--accent-mid)}
+    .filter-input{width:100%}.filter-input::placeholder{color:var(--text-muted)}
+    .pkt-table{width:100%;border-collapse:collapse;font-size:12px}
+    .pkt-table thead{position:sticky;top:0;z-index:2}
+    .pkt-table th{background:var(--bg-secondary);color:var(--text-muted);font-weight:500;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+    .pkt-table td{padding:6px 10px;border-bottom:1px solid rgba(28,42,68,.5);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis}
+    .pkt-table tr{cursor:pointer;transition:background .15s}
+    .pkt-table tbody tr:hover{background:var(--bg-card-hover)}
+    .pkt-table tbody tr.selected{background:rgba(0,255,136,.06);box-shadow:inset 3px 0 0 var(--accent)}
+    .proto-tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:.3px}
+    .proto-tcp{background:rgba(0,255,136,.12);color:#00ff88}.proto-udp{background:rgba(0,170,255,.12);color:#00aaff}
+    .proto-icmp{background:rgba(255,170,0,.12);color:#ffaa00}.proto-arp{background:rgba(255,120,50,.12);color:#ff7832}
+    .proto-dns{background:rgba(160,100,255,.12);color:#a064ff}.proto-http{background:rgba(255,100,150,.12);color:#ff6496}
+    .proto-https{background:rgba(0,210,190,.12);color:#00d2be}.proto-other{background:rgba(84,101,128,.15);color:#8fa3c4}
+    .detail-panel{border-top:2px solid var(--accent);background:var(--bg-secondary);animation:slideUp .3s ease-out}
+    @keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .layer-block{border:1px solid var(--border);border-radius:8px;margin-bottom:8px;overflow:hidden}
+    .layer-header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg-card);cursor:pointer;font-weight:600;font-size:13px;transition:background .15s;user-select:none}
+    .layer-header:hover{background:var(--bg-card-hover)}
+    .layer-header i.chevron{transition:transform .2s;font-size:10px;color:var(--text-muted)}
+    .layer-header.collapsed i.chevron{transform:rotate(-90deg)}
+    .layer-body{padding:10px 14px;font-size:12px;border-top:1px solid var(--border);display:grid;grid-template-columns:180px 1fr;gap:3px 12px}
+    .layer-body.hidden{display:none}
+    .layer-field-name{color:var(--text-muted)}.layer-field-value{color:var(--text-primary);word-break:break-all}
+    .layer-field-value.highlight{color:var(--accent)}
+    .hex-dump{font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.7;background:var(--bg-deep);border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;max-height:260px}
+    .hex-offset{color:var(--text-muted)}.hex-byte{color:var(--info)}.hex-ascii{color:var(--accent)}
+    .threat-item{padding:8px 10px;border-radius:6px;margin-bottom:6px;border-left:3px solid;cursor:pointer;transition:filter .15s;font-size:12px}
+    .threat-item:hover{filter:brightness(1.15)}
+    .threat-critical{background:var(--danger-dim);border-color:var(--danger)}
+    .threat-high{background:rgba(255,120,50,.1);border-color:#ff7832}
+    .threat-medium{background:var(--warning-dim);border-color:var(--warning)}
+    .threat-low{background:var(--info-dim);border-color:var(--info)}
+    .severity-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+    .sev-critical{background:var(--danger);color:#fff}.sev-high{background:#ff7832;color:#fff}
+    .sev-medium{background:var(--warning);color:#000}.sev-low{background:var(--info);color:#fff}
+    .talker-item{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(28,42,68,.4);font-size:12px}
+    .talker-item:last-child{border-bottom:none}
+    .talker-bar{height:4px;border-radius:2px;transition:width .5s ease}
+    .toast-container{position:fixed;bottom:20px;right:20px;z-index:1000;display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none}
+    .toast{padding:12px 18px;border-radius:8px;font-size:13px;font-weight:500;animation:toastIn .3s ease-out,toastOut .3s ease-in 4.7s forwards;max-width:380px;border:1px solid;backdrop-filter:blur(10px);pointer-events:auto}
+    .toast-danger{background:rgba(255,48,96,.15);border-color:rgba(255,48,96,.3);color:#ff6488}
+    .toast-warning{background:rgba(255,170,0,.15);border-color:rgba(255,170,0,.3);color:#ffcc44}
+    .toast-success{background:rgba(0,255,136,.12);border-color:rgba(0,255,136,.3);color:#00ff88}
+    @keyframes toastIn{from{transform:translateX(100px);opacity:0}to{transform:translateX(0);opacity:1}}
+    @keyframes toastOut{from{opacity:1}to{opacity:0;transform:translateY(10px)}}
+    .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;color:var(--text-muted);text-align:center}
+    .empty-state i{font-size:40px;margin-bottom:16px;opacity:.3}
+    ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:var(--border-light);border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:var(--text-muted)}
+    @keyframes pulse-ring{0%{box-shadow:0 0 0 0 rgba(0,255,136,.4)}70%{box-shadow:0 0 0 8px rgba(0,255,136,0)}100%{box-shadow:0 0 0 0 rgba(0,255,136,0)}}
+    .capturing .stat-card{animation:pulse-ring 2s infinite}
+    .capturing .stat-card:nth-child(2){animation-delay:.3s}.capturing .stat-card:nth-child(3){animation-delay:.6s}.capturing .stat-card:nth-child(4){animation-delay:.9s}
+    @keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}.blink{animation:blink 1s infinite}
+    .mode-banner{background:rgba(255,170,0,.08);border-bottom:1px solid rgba(255,170,0,.2);padding:6px 16px;font-size:12px;color:var(--warning);display:flex;align-items:center;gap:8px}
+    .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+    .status-dot.online{background:var(--accent);box-shadow:0 0 6px var(--accent)}
+    .status-dot.offline{background:var(--warning);box-shadow:0 0 6px var(--warning)}
+    .upload-overlay{position:fixed;inset:0;background:rgba(5,9,16,.85);z-index:999;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px}
+    @keyframes spin{to{transform:rotate(360deg)}}.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite}
+    @media(max-width:1024px){.main-grid{grid-template-columns:1fr!important}.detail-grid{grid-template-columns:1fr!important}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+  </style>
+</head>
+<body>
+  <div id="app" class="relative z-10 min-h-screen flex flex-col">
+    <!-- Mode Banner (shown when backend offline) -->
+    <div id="modeBanner" class="mode-banner hidden">
+      <i class="fas fa-flask"></i>
+      <span>Simulation Mode — packets are generated locally. Start the Python backend for real capture and PCAP parsing.</span>
+      <button onclick="this.parentElement.classList.add('hidden')" class="ml-auto text-[--warning] opacity-60 hover:opacity-100 cursor-pointer bg-transparent border-none text-base"><i class="fas fa-xmark"></i></button>
+    </div>
+
+    <!-- Header -->
+    <header class="border-b border-[--border] px-4 md:px-6 py-3 flex flex-wrap items-center justify-between gap-3 bg-[--bg-secondary]/80 backdrop-blur-md" style="z-index:50">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg flex items-center justify-center" style="background:var(--accent-dim);border:1px solid var(--accent-mid)">
+          <i class="fas fa-shield-halved text-[--accent]"></i>
+        </div>
+        <div>
+          <h1 class="text-base font-bold tracking-tight leading-tight">NetScope <span style="color:var(--accent)">Pro</span></h1>
+          <div class="flex items-center gap-2">
+            <span class="status-dot offline" id="statusDot"></span>
+            <span class="text-[10px] tracking-wider uppercase" style="color:var(--text-muted)" id="statusText">Connecting...</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap">
+        <select id="interfaceSelect" class="mono text-xs" aria-label="Network interface">
+          <option value="">Loading interfaces...</option>
+        </select>
+        <button id="captureBtn" class="btn-primary" disabled aria-label="Toggle capture">
+          <i class="fas fa-play text-xs"></i> <span>Start Capture</span>
+        </button>
+        <label class="btn-ghost" tabindex="0" role="button" aria-label="Load PCAP file">
+          <i class="fas fa-folder-open text-xs"></i> <span class="hidden sm:inline">Load PCAP</span>
+          <input type="file" id="pcapInput" accept=".pcap,.cap,.pcapng" class="hidden">
+        </label>
+        <button id="exportBtn" class="btn-ghost" aria-label="Export CSV">
+          <i class="fas fa-file-export text-xs"></i> <span class="hidden sm:inline">Export</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Stats -->
+    <div id="statsBar" class="grid grid-cols-2 lg:grid-cols-4 gap-3 px-4 md:px-6 py-4">
+      <div class="stat-card"><div class="flex items-center justify-between mb-1"><span class="text-[10px] uppercase tracking-widest font-medium" style="color:var(--text-muted)">Total Packets</span><i class="fas fa-cubes text-xs" style="color:var(--accent);opacity:.5"></i></div><div class="text-2xl font-bold mono" id="statTotal">0</div><div class="text-[11px] mt-1" style="color:var(--text-muted)"><span id="statTotalDelta" class="mono" style="color:var(--accent)">+0</span></div></div>
+      <div class="stat-card info"><div class="flex items-center justify-between mb-1"><span class="text-[10px] uppercase tracking-widest font-medium" style="color:var(--text-muted)">Capture Rate</span><i class="fas fa-gauge-high text-xs" style="color:var(--info);opacity:.5"></i></div><div class="text-2xl font-bold mono" id="statRate">0 <span class="text-sm font-normal" style="color:var(--text-muted)">pkt/s</span></div><div class="text-[11px] mt-1" style="color:var(--text-muted)"><span id="statBandwidth" class="mono" style="color:var(--info)">0 B/s</span></div></div>
+      <div class="stat-card danger"><div class="flex items-center justify-between mb-1"><span class="text-[10px] uppercase tracking-widest font-medium" style="color:var(--text-muted)">Threats</span><i class="fas fa-triangle-exclamation text-xs" style="color:var(--danger);opacity:.5"></i></div><div class="text-2xl font-bold mono" id="statThreats" style="color:var(--danger)">0</div><div class="text-[11px] mt-1" style="color:var(--text-muted)"><span id="statThreatCritical" class="mono" style="color:var(--danger)">0</span> critical</div></div>
+      <div class="stat-card warning"><div class="flex items-center justify-between mb-1"><span class="text-[10px] uppercase tracking-widest font-medium" style="color:var(--text-muted)">Sessions</span><i class="fas fa-link text-xs" style="color:var(--warning);opacity:.5"></i></div><div class="text-2xl font-bold mono" id="statSessions">0</div><div class="text-[11px] mt-1" style="color:var(--text-muted)"><span id="statProtocols" class="mono" style="color:var(--warning)">0</span> protocols</div></div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-3 px-4 md:px-6 pb-4 min-h-0 main-grid" style="max-height:calc(100vh - 260px)">
+      <!-- Packet List -->
+      <div class="lg:col-span-5 flex flex-col min-h-0">
+        <div class="flex gap-2 mb-2 items-center">
+          <select id="protocolFilter" class="text-xs" style="min-width:90px" aria-label="Protocol filter">
+            <option value="all">All Protos</option><option value="TCP">TCP</option><option value="UDP">UDP</option><option value="ICMP">ICMP</option><option value="ARP">ARP</option><option value="DNS">DNS</option><option value="HTTP">HTTP</option><option value="HTTPS">HTTPS</option>
+          </select>
+          <input id="searchFilter" class="filter-input text-xs" type="text" placeholder="Filter: IP, port, info..." aria-label="Search">
+          <button id="clearFilters" class="btn-ghost text-xs px-2" title="Clear" aria-label="Clear filters"><i class="fas fa-xmark"></i></button>
+          <label class="flex items-center gap-1 text-[11px] cursor-pointer whitespace-nowrap" style="color:var(--text-muted)"><input type="checkbox" id="followToggle" checked class="accent-[#00ff88]"> Follow</label>
+        </div>
+        <div class="flex-1 overflow-auto rounded-lg border border-[--border]" style="background:var(--bg-card)">
+          <table class="pkt-table"><thead><tr><th style="width:40px">No.</th><th style="width:65px">Time</th><th>Source</th><th>Destination</th><th style="width:65px">Proto</th><th style="width:45px">Len</th><th>Info</th></tr></thead><tbody id="packetList"></tbody></table>
+          <div id="emptyState" class="empty-state"><i class="fas fa-satellite-dish"></i><p class="font-medium text-sm mb-1">No packets captured yet</p><p class="text-xs">Select an interface and click <strong>Start Capture</strong>, or load a PCAP file</p></div>
+        </div>
+      </div>
+      <!-- Charts -->
+      <div class="lg:col-span-4 flex flex-col gap-3 min-h-0">
+        <div class="card flex-1 flex flex-col" style="min-height:200px"><h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color:var(--text-muted)">Protocol Distribution</h3><div class="flex-1 flex items-center justify-center" style="position:relative"><canvas id="protocolChart"></canvas></div></div>
+        <div class="card flex-1 flex flex-col" style="min-height:200px"><h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color:var(--text-muted)">Bandwidth Over Time</h3><div class="flex-1" style="position:relative"><canvas id="bandwidthChart"></canvas></div></div>
+      </div>
+      <!-- Sidebar -->
+      <div class="lg:col-span-3 flex flex-col gap-3 min-h-0">
+        <div class="card" style="padding:10px;min-height:170px"><h3 class="text-xs font-semibold uppercase tracking-wider mb-1" style="color:var(--text-muted)">Network Topology</h3><canvas id="topologyCanvas" style="width:100%;height:140px;display:block"></canvas></div>
+        <div class="card flex-1 overflow-auto" style="min-height:0"><h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color:var(--text-muted)">Top Talkers</h3><div id="topTalkers"><p class="text-xs" style="color:var(--text-muted)">No data yet</p></div></div>
+        <div class="card flex-1 overflow-auto" style="min-height:0"><div class="flex items-center justify-between mb-2"><h3 class="text-xs font-semibold uppercase tracking-wider" style="color:var(--text-muted)">Threat Alerts</h3><span id="alertCount" class="text-[10px] mono px-2 py-0.5 rounded" style="background:var(--danger-dim);color:var(--danger)">0</span></div><div id="threatAlerts"><p class="text-xs" style="color:var(--text-muted)">No alerts</p></div></div>
+      </div>
+    </div>
+
+    <!-- Detail Panel -->
+    <div id="detailPanel" class="detail-panel px-4 md:px-6 py-4 hidden" style="z-index:40">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-3"><span class="text-xs mono px-2 py-1 rounded" style="background:var(--accent-dim);color:var(--accent)" id="detailPacketNo">Packet #0</span><span class="text-sm font-semibold" id="detailSummary"></span></div>
+        <button id="closeDetail" class="btn-ghost text-xs px-2" aria-label="Close"><i class="fas fa-xmark"></i> Close</button>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 detail-grid" style="max-height:300px;overflow:auto">
+        <div id="decodedLayers"></div>
+        <div><h4 class="text-[10px] uppercase tracking-widest font-semibold mb-2" style="color:var(--text-muted)">Hex Dump</h4><div id="hexDump" class="hex-dump"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Overlay -->
+  <div id="uploadOverlay" class="upload-overlay hidden"><div class="spinner"></div><p class="text-sm" style="color:var(--text-secondary)" id="uploadText">Parsing PCAP file...</p></div>
+
+  <!-- Toasts -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    /* ═══════════════════════════════════════════════════
+       CONFIGURATION
+       ═══════════════════════════════════════════════════ */
+    const CFG = { MAX_PACKETS:1500, VISIBLE:400, BW_LEN:60, TOPO_MAX:7, CHART_INT:800, THREAT_INT:15 };
+
+    const PROTO_C = {
+      TCP:{bg:'rgba(0,255,136,.12)',fg:'#00ff88',ch:'#00ff88'},UDP:{bg:'rgba(0,170,255,.12)',fg:'#00aaff',ch:'#00aaff'},
+      ICMP:{bg:'rgba(255,170,0,.12)',fg:'#ffaa00',ch:'#ffaa00'},ARP:{bg:'rgba(255,120,50,.12)',fg:'#ff7832',ch:'#ff7832'},
+      DNS:{bg:'rgba(160,100,255,.12)',fg:'#a064ff',ch:'#a064ff'},HTTP:{bg:'rgba(255,100,150,.12)',fg:'#ff6496',ch:'#ff6496'},
+      HTTPS:{bg:'rgba(0,210,190,.12)',fg:'#00d2be',ch:'#00d2be'},Other:{bg:'rgba(84,101,128,.15)',fg:'#8fa3c4',ch:'#546580'}
+    };
+
+    const SIM_IPS_INT = ['192.168.1.1','192.168.1.50','192.168.1.100','192.168.1.101','192.168.1.105','192.168.1.110','192.168.1.200','10.0.0.1','10.0.0.50','10.0.0.100'];
+    const SIM_IPS_EXT = ['8.8.8.8','8.8.4.4','1.1.1.1','142.250.80.46','151.101.1.140','52.85.132.89','13.107.42.14','172.217.14.206','140.82.121.4','185.199.108.153'];
+    const SIM_IPS_SUSP = ['185.220.101.42','45.33.32.156','91.219.237.249','198.51.100.23'];
+    const SIM_MACS = ['00:1A:2B','00:0C:29','D4:BE:D9','8C:EC:4B','F0:DE:F1','AA:BB:CC','B4:2E:99'];
+    const SIM_PORTS = [80,443,53,22,21,25,3389,8080,8443,993,587,465,143,110,5900,6379,27017,3306];
+    const SUSP_PORTS = [4444,5555,6666,6667,31337,12345];
+    const SIM_DNS = ['google.com','github.com','reddit.com','amazon.com','cloudflare.com','stackoverflow.com','api.telegram.org','cdn.jsdelivr.net','fonts.googleapis.com'];
+    const SIM_PATHS = ['/api/v1/data','/index.html','/api/auth','/static/app.js','/api/users','/favicon.ico','/graphql','/ws/connect','/health'];
+    const PATTERNS = ['cmd.exe','/bin/sh','/bin/bash','passwd','eval(','base64','reverse_shell','powershell -enc'];
+
+    /* ═══════════════════════════════════════════════════
+       STATE
+       ═══════════════════════════════════════════════════ */
+    const S = {
+      backendOn: false, capturing: false, packets: [], selId: null,
+      capStart: null, pktCounter: 0, simInterval: null,
+      filters: { protocol:'all', search:'' },
+      protoStats: {}, topTalkers: {}, sessions: new Set(),
+      threats: [], threatSt: { srcPorts:{}, syns:[], arp:{}, icmps:[] },
+      topoNodes: [], topoParts: [],
+      pktBuffer: [], renderPending: false
+    };
+
+    const $ = id => document.getElementById(id);
+    let socket = null;
+
+    /* ═══════════════════════════════════════════════════
+       UTILITY
+       ═══════════════════════════════════════════════════ */
+    const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+    const pick = a => a[rand(0,a.length-1)];
+    const wPick = (items,w) => { let t=w.reduce((a,b)=>a+b,0),r=Math.random()*t; for(let i=0;i<items.length;i++){r-=w[i];if(r<=0)return items[i]} return items[items.length-1]; };
+    const genMAC = () => pick(SIM_MACS)+':'+[0,1,2,3].map(()=>rand(0,255).toString(16).padStart(2,'0').toUpperCase()).join(':');
+    const fmtBytes = b => b<1024?b+' B/s':b<1048576?(b/1024).toFixed(1)+' KB/s':(b/1048576).toFixed(2)+' MB/s';
+    const isInt = ip => ip.startsWith('192.168.')||ip.startsWith('10.')||ip.startsWith('172.16.')||ip==='127.0.0.1';
+    function b64ToU8(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+
+    /* ═══════════════════════════════════════════════════
+       BACKEND CONNECTION
+       ═══════════════════════════════════════════════════ */
+    function initBackend() {
+      socket = io({ reconnection:true, reconnectionDelay:2000, reconnectionAttempts:20, timeout:5000 });
+
+      socket.on('connect', () => {
+        S.backendOn = true;
+        $('statusDot').className = 'status-dot online';
+        $('statusText').textContent = 'Backend Connected';
+        $('modeBanner').classList.add('hidden');
+        $('captureBtn').disabled = false;
+        fetchInterfaces();
+      });
+
+      socket.on('disconnect', () => {
+        S.backendOn = false;
+        $('statusDot').className = 'status-dot offline';
+        $('statusText').textContent = 'Disconnected';
+        $('modeBanner').classList.remove('hidden');
+        if (S.capturing) stopCapture();
+        loadSimInterfaces();
+      });
+
+      socket.on('connect_error', () => {
+        S.backendOn = false;
+        $('statusDot').className = 'status-dot offline';
+        $('statusText').textContent = 'Simulation Mode';
+        $('modeBanner').classList.remove('hidden');
+        $('captureBtn').disabled = false;
+        loadSimInterfaces();
+      });
+
+      socket.on('connected', () => { /* ack */ });
+
+      socket.on('packet', pkt => {
+        // Convert raw_b64 to Uint8Array for hex dump
+        if (pkt.raw_b64) { pkt.raw = b64ToU8(pkt.raw_b64); delete pkt.raw_b64; }
+        addPacket(pkt);
+      });
+
+      socket.on('capture_started', data => {
+        S.capturing = true;
+        S.capStart = Date.now();
+        S.pktCounter = 0;
+        updateCaptureUI();
+        toast('Capturing on ' + data.interface, 'success');
+      });
+
+      socket.on('capture_stopped', () => {
+        S.capturing = false;
+        updateCaptureUI();
+      });
+
+      socket.on('capture_error', data => {
+        S.capturing = false;
+        updateCaptureUI();
+        toast(data.error, 'danger');
+      });
+    }
+
+    async function fetchInterfaces() {
+      try {
+        const res = await fetch('/api/interfaces');
+        const ifaces = await res.json();
+        const sel = $('interfaceSelect');
+        sel.innerHTML = '';
+        for (const ifc of ifaces) {
+          const opt = document.createElement('option');
+          opt.value = ifc.name;
+          opt.textContent = ifc.name + (ifc.ip !== 'N/A' ? ' — ' + ifc.ip : '');
+          sel.appendChild(opt);
+        }
+      } catch(e) {
+        loadSimInterfaces();
+      }
+    }
+
+    function loadSimInterfaces() {
+      const sel = $('interfaceSelect');
+      if (sel.options.length > 1 && sel.options[0].value !== 'eth0') return; // already loaded
+      sel.innerHTML = '';
+      [{n:'eth0',d:'Ethernet'},{n:'eth1',d:'Ethernet 2'},{n:'wlan0',d:'Wi-Fi'},{n:'lo',d:'Loopback'}].forEach(i => {
+        const o = document.createElement('option');
+        o.value = i.n; o.textContent = i.n + ' — ' + i.d + ' (sim)';
+        sel.appendChild(o);
+      });
+    }
+
+    /* ═══════════════════════════════════════════════════
+       SIMULATION ENGINE (fallback)
+       ═══════════════════════════════════════════════════ */
+    function simGenerate() {
+      S.pktCounter++;
+      const now = S.capStart ? (Date.now()-S.capStart)/1000 : 0;
+      const proto = wPick(['TCP','UDP','DNS','HTTP','HTTPS','ICMP','ARP'],[40,18,12,10,8,4,3]);
+      let srcIP,dstIP,srcPort=0,dstPort=0,info='',flags='',payload='';
+      const sus = Math.random()<0.04;
+      const mS=genMAC(), mD=Math.random()<0.3?'FF:FF:FF:FF:FF:FF':genMAC();
+
+      if (proto==='ARP') {
+        srcIP=pick(SIM_IPS_INT); dstIP=Math.random()<.5?pick(SIM_IPS_INT):'192.168.1.1';
+        info=Math.random()<.5?'Who has '+dstIP+'? Tell '+srcIP:srcIP+' is at '+mS;
+        payload=Array.from({length:rand(0,18)},()=>rand(0,255));
+      } else if (proto==='ICMP') {
+        srcIP=sus?pick(SIM_IPS_SUSP):pick(SIM_IPS_INT); dstIP=sus?pick(SIM_IPS_INT):pick(Math.random()<.5?SIM_IPS_EXT:SIM_IPS_INT);
+        const t=pick([0,8,3,11]); info={0:'Echo reply',8:'Echo request',3:'Dest unreachable',11:'Time exceeded'}[t];
+        payload=Array.from({length:rand(8,64)},()=>rand(0,255));
+      } else {
+        const fi=Math.random()<.7;
+        srcIP=fi?pick(SIM_IPS_INT):(sus?pick(SIM_IPS_SUSP):pick(SIM_IPS_EXT));
+        dstIP=fi?(sus?pick(SIM_IPS_SUSP):pick(SIM_IPS_EXT)):pick(SIM_IPS_INT);
+        srcPort=rand(1024,65535);
+        if (proto==='DNS') {
+          dstPort=53; const q=pick(SIM_DNS);
+          info=(Math.random()<.6?'Query':'Response')+' '+q+(sus?'.'+Array.from({length:rand(6,15)},()=>pick(SIM_DNS).split('.')[0]).join('-'):'');
+          payload=new TextEncoder().encode(q);
+        } else if (proto==='HTTP') {
+          dstPort=80; const m=pick(['GET','POST','PUT','DELETE','HEAD']), p=pick(SIM_PATHS);
+          info=m+' '+p+' HTTP/1.1'; payload=new TextEncoder().encode(m+' '+p+' HTTP/1.1\r\nHost: '+dstIP+'\r\n\r\n');
+        } else if (proto==='HTTPS') {
+          dstPort=443; flags=pick(['ACK','PSH, ACK']); info=dstPort+' → '+srcPort+' ['+flags+'] Len='+rand(0,1400);
+          payload=Array.from({length:rand(0,1400)},()=>rand(0,255));
+        } else {
+          dstPort=sus?pick(SUSP_PORTS):pick(SIM_PORTS);
+          if (proto==='TCP') {
+            flags=pick(['SYN','SYN, ACK','ACK','PSH, ACK','FIN, ACK','RST']);
+            info=srcPort+' → '+dstPort+' ['+flags+'] Seq='+rand(1000,9999999)+' Len='+rand(0,1400);
+            payload=flags.includes('PSH')?Array.from({length:rand(50,1400)},()=>rand(0,255)):new Uint8Array(0);
+          } else {
+            info=srcPort+' → '+dstPort+' Len='+rand(8,512);
+            payload=Array.from({length:rand(8,512)},()=>rand(0,255));
+          }
+        }
+      }
+
+      // Build raw bytes
+      const eth=new Uint8Array(14);
+      for(let i=0;i<6;i++){eth[i]=parseInt(mD.split(':')[i],16);eth[6+i]=parseInt(mS.split(':')[i],16)}
+      eth[12]=(proto==='ARP'?0x06:0x08); eth[13]=(proto==='ARP'?0x06:0x00);
+      const ip=new Uint8Array(20); ip[0]=0x45;
+      const pl=payload instanceof Uint8Array?payload:new TextEncoder().encode(typeof payload==='string'?payload:'');
+      const totLen=20+(proto!=='ARP'&&proto!=='ICMP'?8:0)+pl.length;
+      ip[2]=(totLen>>8)&0xff; ip[3]=totLen&0xff; ip[8]=64;
+      ip[9]={TCP:6,UDP:17,DNS:17,HTTP:6,HTTPS:6,ICMP:1,ARP:0}[proto]||0;
+      srcIP.split('.').map(Number).forEach((v,i)=>ip[12+i]=v);
+      dstIP.split('.').map(Number).forEach((v,i)=>ip[16+i]=v);
+      const full=new Uint8Array(14+20+pl.length);
+      full.set(eth,0); full.set(ip,14); full.set(pl,34);
+
+      return { id:S.pktCounter, time:parseFloat(now.toFixed(6)), srcIP, dstIP, srcPort, dstPort,
+        protocol:proto, length:full.length, info, flags, src_mac:mS, dst_mac:mD, raw:full, is_suspicious:sus };
+    }
+
+    function simLoop() {
+      const burst = Math.random()<0.15;
+      const count = burst?rand(3,8):1;
+      for(let i=0;i<count;i++) addPacket(simGenerate());
+      S.simInterval = setTimeout(simLoop, rand(80, burst?100:500));
+    }
+
+    /* ═══════════════════════════════════════════════════
+       CAPTURE CONTROL
+       ═══════════════════════════════════════════════════ */
+    function toggleCapture() {
+      S.capturing ? stopCapture() : startCapture();
+    }
+
+    function startCapture() {
+      const iface = $('interfaceSelect').value;
+      if (!iface) { toast('Select an interface first','warning'); return; }
+
+      if (S.backendOn) {
+        socket.emit('start_capture', { interface: iface });
+      } else {
+        S.capturing = true;
+        S.capStart = Date.now();
+        simLoop();
+        updateCaptureUI();
+      }
+    }
+
+    function stopCapture() {
+      if (S.backendOn && S.capturing) {
+        socket.emit('stop_capture');
+      }
+      S.capturing = false;
+      if (S.simInterval) { clearTimeout(S.simInterval); S.simInterval = null; }
+      updateCaptureUI();
+    }
+
+    function updateCaptureUI() {
+      const btn = $('captureBtn');
+      if (S.capturing) {
+        btn.innerHTML = '<i class="fas fa-stop text-xs blink"></i> <span>Stop</span>';
+        btn.classList.add('active');
+        $('statsBar').classList.add('capturing');
+      } else {
+        btn.innerHTML = '<i class="fas fa-play text-xs"></i> <span>Start Capture</span>';
+        btn.classList.remove('active');
+        $('statsBar').classList.remove('capturing');
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════
+       PCAP UPLOAD
+       ═══════════════════════════════════════════════════ */
+    async function handlePCAPUpload(file) {
+      if (S.capturing) stopCapture();
+
+      $('uploadOverlay').classList.remove('hidden');
+      $('uploadText').textContent = 'Parsing ' + file.name + '...';
+
+      if (S.backendOn) {
+        // Send to backend
+        try {
+          const fd = new FormData();
+          fd.append('file', file);
+          const res = await fetch('/api/pcap/upload', { method:'POST', body:fd });
+          const data = await res.json();
+          $('uploadOverlay').classList.add('hidden');
+
+          if (data.error) { toast(data.error, 'danger'); return; }
+
+          // Reset and load
+          resetState();
+          for (const pkt of data.packets) {
+            if (pkt.raw_b64) { pkt.raw = b64ToU8(pkt.raw_b64); delete pkt.raw_b64; }
+            S.packets.push(pkt);
+            S.pktCounter = Math.max(S.pktCounter, pkt.id);
+            trackSession(pkt);
+          }
+          refreshAll();
+          toast('Loaded ' + data.total + ' packets' + (data.truncated ? ' (truncated to 15000)' : ''), 'success');
+        } catch(e) {
+          $('uploadOverlay').classList.add('hidden');
+          toast('Upload failed: ' + e.message, 'danger');
+        }
+      } else {
+        // Client-side fallback
+        setTimeout(async () => {
+          try {
+            const buf = await file.arrayBuffer();
+            const pkts = clientParsePCAP(buf);
+            $('uploadOverlay').classList.add('hidden');
+            if (!pkts.length) { toast('No parseable packets found','warning'); return; }
+            resetState();
+            pkts.forEach(p => { S.packets.push(p); S.pktCounter = Math.max(S.pktCounter, p.id); trackSession(p); });
+            refreshAll();
+            toast('Loaded ' + pkts.length + ' packets (client-side parse)', 'success');
+          } catch(e) {
+            $('uploadOverlay').classList.add('hidden');
+            toast('Parse error: ' + e.message, 'danger');
+          }
+        }, 100);
+      }
+    }
+
+    // Client-side PCAP parser (fallback when no backend)
+    function clientParsePCAP(buffer) {
+      const v = new DataView(buffer);
+      const magic = v.getUint32(0, true);
+      let le = true;
+      if (magic === 0xa1b2c3d4) le = true;
+      else if (magic === 0xd4c3b2a1) le = false;
+      else throw new Error('Invalid PCAP magic: 0x' + magic.toString(16));
+      const net = v.getUint32(20, le);
+      if (net !== 1) throw new Error('Only Ethernet PCAP supported (got linktype ' + net + ')');
+
+      const pkts = []; let off = 24, id = 0;
+      while (off + 16 <= buffer.byteLength) {
+        const tsS = v.getUint32(off, le), tsU = v.getUint32(off+4, le);
+        const iLen = v.getUint32(off+8, le); off += 16;
+        if (off + iLen > buffer.byteLength) break;
+        const raw = new Uint8Array(buffer, off, iLen); off += iLen;
+        id++;
+        const pkt = clientDecodeRaw(raw, tsS + tsU/1e6);
+        if (pkt) { pkt.id = id; pkts.push(pkt); }
+      }
+      return pkts;
+    }
+
+    function clientDecodeRaw(raw, ts) {
+      if (raw.length < 14) return null;
+      const mD = Array.from(raw.slice(0,6)).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(':');
+      const mS = Array.from(raw.slice(6,12)).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(':');
+      const eT = (raw[12]<<8)|raw[13];
+      let proto='Other',sIP='0.0.0.0',dIP='0.0.0.0',sP=0,dP=0,info='',flags='';
+
+      if (eT===0x0806 && raw.length>=42) {
+        proto='ARP'; sIP=raw[28]+'.'+raw[29]+'.'+raw[30]+'.'+raw[31]; dIP=raw[38]+'.'+raw[39]+'.'+raw[40]+'.'+raw[41];
+        info=((raw[21]<<8)|raw[20])===1?'Who has '+dIP+'? Tell '+sIP:sIP+' is at '+mS;
+      } else if (eT===0x0800 && raw.length>=34) {
+        sIP=raw[26]+'.'+raw[27]+'.'+raw[28]+'.'+raw[29]; dIP=raw[30]+'.'+raw[31]+'.'+raw[32]+'.'+raw[33];
+        const ipP=raw[23], ihl=(raw[14]&0xf)*4;
+        if (ipP===6 && raw.length>=14+ihl+20) {
+          const o=14+ihl; sP=(raw[o]<<8)|raw[o+1]; dP=(raw[o+2]<<8)|raw[o+3];
+          const f=raw[o+13]; flags=[];
+          if(f&0x02)flags.push('SYN');if(f&0x10)flags.push('ACK');if(f&0x08)flags.push('PSH');if(f&0x01)flags.push('FIN');if(f&0x04)flags.push('RST');
+          flags=flags.join(', ')||'None';
+          const dLen=Math.max(0,raw.length-o-((raw[o+12]>>4)*4));
+          if(dP===80||sP===80){ const ps=o+((raw[o+12]>>4)*4); try{const h=new TextDecoder('ascii',{fatal:false}).decode(raw.slice(ps,ps+20)); if(h.match(/^(GET|POST|PUT|DELETE|HEAD|HTTP)/)){proto='HTTP';info=h.split('\r\n')[0];}else{proto='TCP';info=sP+' → '+dP+' ['+flags+'] Len='+dLen;}}catch(e){proto='TCP';info=sP+' → '+dP+' ['+flags+']';}}
+          else if(dP===443||sP===443){proto='HTTPS';info=sP+' → '+dP+' ['+flags+'] Len='+dLen;}
+          else{proto='TCP';info=sP+' → '+dP+' ['+flags+'] Seq='+((raw[o+4]<<24)|(raw[o+5]<<16)|(raw[o+6]<<8)|raw[o+7])+' Len='+dLen;}
+        } else if (ipP===17 && raw.length>=14+ihl+8) {
+          const o=14+ihl; sP=(raw[o]<<8)|raw[o+1]; dP=(raw[o+2]<<8)|raw[o+3];
+          proto=(dP===53||sP===53)?'DNS':'UDP'; info=sP+' → '+dP+' Len='+((raw[o+4]<<8)|raw[o+5]);
+        } else if (ipP===1) {
+          proto='ICMP'; const t=raw[14+ihl]; info={0:'Echo reply',8:'Echo request',3:'Dest unreachable',11:'Time exceeded'}[t]||'ICMP Type '+t;
+        }
+      }
+      return { id:0, time:parseFloat(ts.toFixed(6)), src_ip:sIP, dst_ip:dIP, src_port:sP, dst_port:dP, protocol:proto, length:raw.length, info, flags, src_mac:mS, dst_mac:mD, raw, is_suspicious:false };
+    }
+
+    /* ═══════════════════════════════════════════════════
+       PACKET PROCESSING
+       ═══════════════════════════════════════════════════ */
+    function addPacket(pkt) {
+      // Normalize field names (backend uses snake_case, sim uses camelCase)
+      if (pkt.src_ip !== undefined) {
+        pkt.srcIP = pkt.src_ip; pkt.dstIP = pkt.dst_ip;
+        pkt.srcPort = pkt.src_port; pkt.dstPort = pkt.dst_port;
+        pkt.srcMac = pkt.src_mac; pkt.dstMac = pkt.dst_mac;
+      }
+      if (S.packets.length >= CFG.MAX_PACKETS) S.packets.splice(0, S.packets.length - CFG.MAX_PACKETS + 200);
+      S.packets.push(pkt);
+      trackSession(pkt);
+      addTopoParticle(pkt.srcIP, pkt.dstIP);
+
+      if (S.packets.length % CFG.THREAT_INT === 0) runThreats(pkt);
+
+      // Batch rendering
+      S.pktBuffer.push(pkt);
+      if (!S.renderPending) {
+        S.renderPending = true;
+        requestAnimationFrame(flushBuffer);
+      }
+    }
+
+    function flushBuffer() {
+      S.pktBuffer = [];
+      S.renderPending = false;
+      renderList();
+      updateStats();
+    }
+
+    function trackSession(p) {
+      if (p.srcPort && p.dstPort) S.sessions.add([p.srcIP,p.srcPort,p.dstIP,p.dstPort].sort().join('-'));
+    }
+
+    function resetState() {
+      S.packets = []; S.pktCounter = 0; S.sessions.clear(); S.threats = [];
+      S.threatSt = { srcPorts:{}, syns:[], arp:{}, icmps:[] };
+      S.protoStats = {}; S.topTalkers = {}; S.selId = null;
+      $('detailPanel').classList.add('hidden');
+    }
+
+    /* ═══════════════════════════════════════════════════
+       THREAT DETECTION
+       ═══════════════════════════════════════════════════ */
+    function runThreats(pkt) {
+      const ts = S.packets.length > 0 ? S.packets[S.packets.length-1].time : 0;
+      const alerts = [];
+      const ts_k = ts;
+
+      // Port scan
+      if (pkt.srcPort > 0 && pkt.protocol !== 'ARP' && pkt.protocol !== 'ICMP') {
+        if (!S.threatSt.srcPorts[pkt.srcIP]) S.threatSt.srcPorts[pkt.srcIP] = new Set();
+        S.threatSt.srcPorts[pkt.srcIP].add(pkt.dstPort);
+        if (S.threatSt.srcPorts[pkt.srcIP].size > 10 && !S.threats.find(a=>a.type==='Port Scan'&&a.source===pkt.srcIP)) {
+          alerts.push({ id:Date.now(), time:ts_k, severity:'high', type:'Port Scan', source:pkt.srcIP, description:pkt.srcIP+' scanned '+S.threatSt.srcPorts[pkt.srcIP].size+' ports', packetId:pkt.id });
+        }
+      }
+      // SYN flood
+      if ((pkt.flags||'').includes('SYN')) S.threatSt.syns.push({time:ts_k,src:pkt.srcIP});
+      S.threatSt.syns = S.threatSt.syns.filter(s=>s.time>ts_k-10);
+      const sc={}; S.threatSt.syns.forEach(s=>{sc[s.src]=(sc[s.src]||0)+1});
+      for(const[ip,c] of Object.entries(sc)){
+        if(c>25&&!S.threats.find(a=>a.type==='SYN Flood'&&a.source===ip))
+          alerts.push({id:Date.now()+1,time:ts_k,severity:'critical',type:'SYN Flood',source:ip,description:ip+' sent '+c+' SYN in 10s',packetId:pkt.id});
+      }
+      // Suspicious port
+      if(SUSP_PORTS.includes(pkt.dstPort)||SUSP_PORTS.includes(pkt.srcPort))
+        alerts.push({id:Date.now()+2,time:ts_k,severity:'medium',type:'Suspicious Port',source:pkt.srcIP,description:'Port '+(SUSP_PORTS.includes(pkt.dstPort)?pkt.dstPort:pkt.srcPort)+' is known malware port',packetId:pkt.id});
+      // ARP spoof
+      if(pkt.protocol==='ARP'&&(pkt.info||'').includes('is at')){
+        if(!S.threatSt.arp[pkt.srcIP])S.threatSt.arp[pkt.srcIP]=new Set();
+        S.threatSt.arp[pkt.srcIP].add(pkt.srcMac||pkt.src_mac||'');
+        if(S.threatSt.arp[pkt.srcIP].size>1&&!S.threats.find(a=>a.type==='ARP Spoofing'&&a.source===pkt.srcIP))
+          alerts.push({id:Date.now()+3,time:ts_k,severity:'critical',type:'ARP Spoofing',source:pkt.srcIP,description:pkt.srcIP+' claims multiple MACs',packetId:pkt.id});
+      }
+      // ICMP flood
+      if(pkt.protocol==='ICMP')S.threatSt.icmps.push({time:ts_k,src:pkt.srcIP});
+      S.threatSt.icmps=S.threatSt.icmps.filter(s=>s.time>ts_k-5);
+      const ic={};S.threatSt.icmps.forEach(s=>{ic[s.src]=(ic[s.src]||0)+1});
+      for(const[ip,c] of Object.entries(ic)){
+        if(c>20&&!S.threats.find(a=>a.type==='ICMP Flood'&&a.source===ip))
+          alerts.push({id:Date.now()+4,time:ts_k,severity:'high',type:'ICMP Flood',source:ip,description:ip+' sent '+c+' ICMP in 5s',packetId:pkt.id});
+      }
+      // Payload patterns
+      if(pkt.raw){
+        const txt=new TextDecoder('ascii',{fatal:false}).decode(pkt.raw.slice(0,600));
+        for(const pat of PATTERNS){
+          if(txt.toLowerCase().includes(pat)){
+            alerts.push({id:Date.now()+5,time:ts_k,severity:'critical',type:'Suspicious Payload',source:pkt.srcIP,description:'Pattern "'+pat+'" in payload',packetId:pkt.id});break;
+          }
+        }
+      }
+
+      for(const a of alerts){
+        S.threats.push(a);
+        if(a.severity==='critical') toast(a.type+': '+a.description,'danger');
+        else if(a.severity==='high') toast(a.type+' from '+a.source,'warning');
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════
+       UI RENDERING
+       ═══════════════════════════════════════════════════ */
+    function refreshAll() {
+      updateProtoStats(); updateTopTalkers(); renderList(); updateStats(); updateCharts(); renderThreats();
+    }
+
+    function renderList() {
+      const tbody=$('packetList'), empty=$('emptyState');
+      let f=S.packets;
+      if(S.filters.protocol!=='all') f=f.filter(p=>p.protocol===S.filters.protocol);
+      if(S.filters.search){ const s=S.filters.search.toLowerCase(); f=f.filter(p=>(p.srcIP||'').includes(s)||(p.dstIP||'').includes(s)||(p.info||'').toLowerCase().includes(s)||String(p.srcPort||'').includes(s)||String(p.dstPort||'').includes(s)); }
+      const vis=f.slice(-CFG.VISIBLE);
+      if(!vis.length){tbody.innerHTML='';empty.style.display='flex';return;}
+      empty.style.display='none';
+      let h='';
+      for(const p of vis){
+        const pc=PROTO_C[p.protocol]||PROTO_C.Other;
+        const sel=p.id===S.selId?' selected':'';
+        h+=`<tr class="mono${sel}" data-id="${p.id}"><td style="color:var(--text-muted)">${p.id}</td><td style="color:var(--text-secondary)">${p.time.toFixed(3)}</td><td style="color:${isInt(p.srcIP)?'var(--text-primary)':'var(--info)'}">${p.srcIP||''}${p.srcPort?':'+p.srcPort:''}</td><td style="color:${isInt(p.dstIP)?'var(--text-primary)':'var(--info)'}">${p.dstIP||''}${p.dstPort?':'+p.dstPort:''}</td><td><span class="proto-tag proto-${p.protocol.toLowerCase()}">${p.protocol}</span></td><td style="color:var(--text-secondary)">${p.length}</td><td style="color:var(--text-secondary);max-width:220px;overflow:hidden;text-overflow:ellipsis">${p.info||''}</td></tr>`;
+      }
+      tbody.innerHTML=h;
+      if($('followToggle').checked&&S.capturing){const c=tbody.closest('.overflow-auto');if(c)c.scrollTop=c.scrollHeight;}
+      tbody.querySelectorAll('tr').forEach(tr=>tr.addEventListener('click',()=>selectPacket(+tr.dataset.id)));
+    }
+
+    function selectPacket(id) {
+      S.selId = id;
+      const pkt = S.packets.find(p=>p.id===id);
+      if(!pkt) return;
+      document.querySelectorAll('.pkt-table tr').forEach(tr=>tr.classList.toggle('selected',+tr.dataset.id===id));
+      const panel=$('detailPanel'); panel.classList.remove('hidden');
+      $('detailPacketNo').textContent='Packet #'+pkt.id;
+      $('detailSummary').textContent=(pkt.srcIP||'')+' → '+(pkt.dstIP||'')+' ('+pkt.protocol+')';
+
+      // Layers
+      if(pkt.layers && pkt.layers.length) {
+        renderBackendLayers(pkt.layers);
+      } else {
+        renderClientLayers(pkt);
+      }
+
+      // Hex dump
+      if(pkt.raw) renderHex(pkt.raw);
+      else $('hexDump').innerHTML='<span style="color:var(--text-muted)">Raw data not available</span>';
+    }
+
+    function renderBackendLayers(layers) {
+      let h='';
+      layers.forEach((l,i)=>{
+        h+=`<div class="layer-block"><div class="layer-header" data-l="${i}" style="border-left:3px solid ${l.color}"><i class="fas fa-chevron-down chevron"></i><span style="color:${l.color}">${l.name}</span></div><div class="layer-body" id="lb-${i}">`;
+        for(const f of l.fields){
+          h+=`<span class="layer-field-name">${f[0]}</span><span class="layer-field-value${f[2]?' highlight':''}">${f[1]}</span>`;
+        }
+        h+='</div></div>';
+      });
+      $('decodedLayers').innerHTML=h;
+      document.querySelectorAll('.layer-header').forEach(hdr=>hdr.addEventListener('click',()=>{
+        const b=document.getElementById('lb-'+hdr.dataset.l);b.classList.toggle('hidden');hdr.classList.toggle('collapsed');
+      }));
+    }
+
+    function renderClientLayers(pkt) {
+      // Minimal client-side decode for simulation packets
+      renderBackendLayers([{
+        name:'Ethernet II',color:'#ff7832',
+        fields:[['Source MAC',pkt.srcMac||''],['Destination MAC',pkt.dstMac||''],['Frame Length',pkt.length+' bytes']]
+      },{
+        name:'Network Layer',color:'#00aaff',
+        fields:[['Source',pkt.srcIP||'',true],['Destination',pkt.dstIP||'',true],['Protocol',pkt.protocol]]
+      }]);
+    }
+
+    function renderHex(raw) {
+      let h='';
+      for(let off=0;off<raw.length;off+=16){
+        const sl=raw.slice(off,Math.min(off+16,raw.length));
+        const hex=Array.from(sl).map(b=>b.toString(16).padStart(2,'0').toUpperCase()).join(' ');
+        const asc=Array.from(sl).map(b=>b>=32&&b<=126?String.fromCharCode(b):'.').join('');
+        h+=`<div><span class="hex-offset">${off.toString(16).padStart(8,'0')}</span>  <span class="hex-byte">${hex.padEnd(47,' ')}</span> <span class="hex-ascii">|${asc}|</span></div>`;
+      }
+      if(raw.length>1024) h+=`<div style="color:var(--text-muted);padding-top:8px;font-size:11px">... truncated, showing first 1024 of ${raw.length} bytes</div>`;
+      $('hexDump').innerHTML=h;
+    }
+
+    function updateStats() {
+      const t=S.packets.length;
+      $('statTotal').textContent=t.toLocaleString();
+      $('statTotalDelta').textContent='+'+t;
+      if(t>1){
+        const r=S.packets.slice(-20), span=r[r.length-1].time-r[0].time;
+        const rate=span>0?Math.round(r.length/span):0;
+        $('statRate').innerHTML=rate+' <span class="text-sm font-normal" style="color:var(--text-muted)">pkt/s</span>';
+        const bw=span>0?Math.round(r.reduce((s,p)=>s+p.length,0)/span):0;
+        $('statBandwidth').textContent=fmtBytes(bw);
+      }
+      $('statThreats').textContent=S.threats.length;
+      $('statThreatCritical').textContent=S.threats.filter(a=>a.severity==='critical').length;
+      $('statSessions').textContent=S.sessions.size;
+      $('statProtocols').textContent=new Set(S.packets.map(p=>p.protocol)).size;
+    }
+
+    function updateProtoStats() {
+      S.protoStats={};
+      for(const p of S.packets) S.protoStats[p.protocol]=(S.protoStats[p.protocol]||0)+1;
+    }
+
+    function updateTopTalkers() {
+      const tk={};
+      for(const p of S.packets){const k=p.srcIP;if(!tk[k])tk[k]={ip:k,pkts:0,isIn:isInt(k)};tk[k].pkts++;}
+      S.topTalkers=Object.values(tk).sort((a,b)=>b.pkts-a.pkts).slice(0,8);
+      const mx=S.topTalkers[0]?.pkts||1;
+      let h='';
+      for(const t of S.topTalkers){
+        const c=t.isIn?'var(--accent)':'var(--info)';
+        h+=`<div class="talker-item"><div style="flex:1;min-width:0"><div class="flex items-center justify-between mb-1"><span class="mono text-xs" style="color:${c}">${t.ip}</span><span class="mono text-[10px]" style="color:var(--text-muted)">${t.pkts}</span></div><div style="background:var(--border);border-radius:2px;height:4px;overflow:hidden"><div class="talker-bar" style="width:${(t.pkts/mx*100).toFixed(0)}%;background:${c}"></div></div></div></div>`;
+      }
+      $('topTalkers').innerHTML=h||'<p class="text-xs" style="color:var(--text-muted)">No data</p>';
+    }
+
+    function renderThreats() {
+      $('alertCount').textContent=S.threats.length;
+      if(!S.threats.length){$('threatAlerts').innerHTML='<p class="text-xs" style="color:var(--text-muted)">No alerts</p>';return;}
+      const r=S.threats.slice(-20).reverse();
+      let h='';
+      for(const a of r){
+        h+=`<div class="threat-item threat-${a.severity}" data-pid="${a.packetId}"><div class="flex items-center justify-between mb-1"><span class="severity-badge sev-${a.severity}">${a.severity}</span><span class="mono text-[10px]" style="color:var(--text-muted)">${a.time.toFixed(1)}s</span></div><div class="font-semibold text-xs mb-0.5">${a.type}</div><div class="text-[11px]" style="color:var(--text-secondary)">${a.description}</div><div class="text-[10px] mt-1 mono" style="color:var(--text-muted)">${a.source}</div></div>`;
+      }
+      $('threatAlerts').innerHTML=h;
+      document.querySelectorAll('.threat-item').forEach(el=>el.addEventListener('click',()=>{
+        selectPacket(+el.dataset.pid);
+        const row=document.querySelector(`.pkt-table tr[data-id="${el.dataset.pid}"]`);
+        if(row)row.scrollIntoView({behavior:'smooth',block:'center'});
+      }));
+    }
+
+    /* ═══════════════════════════════════════════════════
+       CHARTS
+       ═══════════════════════════════════════════════════ */
+    let pChart, bChart;
+    const cFont = {family:"'Space Grotesk', sans-serif"};
+
+    function initCharts() {
+      pChart = new Chart($('protocolChart'), {
+        type:'doughnut', data:{labels:Object.keys(PROTO_C),datasets:[{data:Array(8).fill(0),backgroundColor:Object.values(PROTO_C).map(c=>c.ch),borderColor:'transparent',borderWidth:0,hoverOffset:6}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:'#8fa3c4',font:{...cFont,size:11},padding:8,boxWidth:10,boxHeight:10,usePointStyle:true,pointStyle:'rectRounded'}},tooltip:{backgroundColor:'#131c2e',titleColor:'#e8edf5',bodyColor:'#8fa3c4',borderColor:'#1c2a44',borderWidth:1,titleFont:cFont,bodyFont:cFont,padding:10,callbacks:{label:c=>{const t=c.dataset.data.reduce((a,b)=>a+b,0);return ' '+c.label+': '+c.raw+(t?' ('+(c.raw/t*100).toFixed(1)+'%)':'')}}}}}
+      });
+      bChart = new Chart($('bandwidthChart'), {
+        type:'line', data:{labels:[],datasets:[{label:'Inbound',data:[],borderColor:'#00ff88',backgroundColor:'rgba(0,255,136,.08)',fill:true,tension:.4,borderWidth:2,pointRadius:0,pointHitRadius:8},{label:'Outbound',data:[],borderColor:'#00aaff',backgroundColor:'rgba(0,170,255,.06)',fill:true,tension:.4,borderWidth:2,pointRadius:0,pointHitRadius:8}]},
+        options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},scales:{x:{grid:{color:'rgba(28,42,68,.4)',drawBorder:false},ticks:{color:'#546580',font:{...cFont,size:10},maxTicksLimit:8}},y:{grid:{color:'rgba(28,42,68,.4)',drawBorder:false},ticks:{color:'#546580',font:{...cFont,size:10},callback:v=>fmtBytes(v)},beginAtZero:true}},plugins:{legend:{labels:{color:'#8fa3c4',font:{...cFont,size:11},boxWidth:10,boxHeight:2}},tooltip:{backgroundColor:'#131c2e',titleColor:'#e8edf5',bodyColor:'#8fa3c4',borderColor:'#1c2a44',borderWidth:1,titleFont:cFont,bodyFont:cFont,padding:10,callbacks:{label:c=>' '+c.dataset.label+': '+fmtBytes(c.raw)}}}}
+      });
+    }
+
+    function updateCharts() {
+      updateProtoStats();
+      const order=Object.keys(PROTO_C);
+      pChart.data.datasets[0].data=order.map(p=>S.protoStats[p]||0);
+      pChart.update('none');
+
+      const now=S.packets.length?S.packets[S.packets.length-1].time:0;
+      const w=2; const inD=[],outD=[],labs=[];
+      for(let t=Math.max(0,now-CFG.BW_LEN*w);t<=now;t+=w){
+        const wp=S.packets.filter(p=>p.time>=t&&p.time<t+w);
+        let ib=0,ob=0;
+        for(const p of wp){if(isInt(p.dstIP))ib+=p.length;else ob+=p.length;}
+        inD.push(ib/w); outD.push(ob/w); labs.push(t.toFixed(0)+'s');
+      }
+      bChart.data.labels=labs.slice(-CFG.BW_LEN);
+      bChart.data.datasets[0].data=inD.slice(-CFG.BW_LEN);
+      bChart.data.datasets[1].data=outD.slice(-CFG.BW_LEN);
+      bChart.update('none');
+    }
+
+    /* ═══════════════════════════════════════════════════
+       TOPOLOGY CANVAS
+       ═══════════════════════════════════════════════════ */
+    let tCtx,tW,tH,tAnim;
+    function initTopo(){
+      const c=$('topologyCanvas'),dpr=window.devicePixelRatio||1,r=c.getBoundingClientRect();
+      tW=r.width;tH=r.height;c.width=tW*dpr;c.height=tH*dpr;
+      tCtx=c.getContext('2d');tCtx.scale(dpr,dpr);animTopo();
+    }
+    function animTopo(){
+      tCtx.clearRect(0,0,tW,tH);
+      const cx=tW/2,cy=tH/2,tk=Object.values(S.topTalkers).slice(0,CFG.TOPO_MAX);
+      S.topoParts=S.topoParts.filter(p=>p.prog<1);
+      for(const p of S.topoParts)p.prog+=.025+Math.random()*.01;
+      const nodes=[{x:cx,y:cy,label:'You',color:'#00ff88',center:true}];
+      for(let i=0;i<tk.length;i++){
+        const a=(i/tk.length)*Math.PI*2-Math.PI/2, rad=Math.min(tW,tH)*.35;
+        nodes.push({x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad,label:tk.ip.length>15?tk.ip.slice(0,12)+'..':tk.ip,color:tk.isIn?'#00ff88':'#00aaff'});
+      }
+      for(let i=1;i<nodes.length;i++){tCtx.beginPath();tCtx.moveTo(cx,cy);tCtx.lineTo(nodes[i].x,nodes[i].y);tCtx.strokeStyle='rgba(0,255,136,.1)';tCtx.lineWidth=1;tCtx.stroke();}
+      for(const p of S.topoParts){
+        const f=nodes[p.fi],t=nodes[p.ti];if(!f||!t)continue;
+        const px=f.x+(t.x-f.x)*p.prog,py=f.y+(t.y-f.y)*p.prog;
+        tCtx.beginPath();tCtx.arc(px,py,2.5,0,Math.PI*2);tCtx.fillStyle=p.c;tCtx.fill();
+        const tx=f.x+(t.x-f.x)*Math.max(0,p.prog-.1),ty=f.y+(t.y-f.y)*Math.max(0,p.prog-.1);
+        tCtx.beginPath();tCtx.moveTo(tx,ty);tCtx.lineTo(px,py);tCtx.strokeStyle=p.c;tCtx.lineWidth=1.5;tCtx.stroke();
+      }
+      for(const n of nodes){
+        const r=n.center?8:5;
+        if(n.center){const g=tCtx.createRadialGradient(n.x,n.y,0,n.x,n.y,20);g.addColorStop(0,'rgba(0,255,136,.2)');g.addColorStop(1,'rgba(0,255,136,0)');tCtx.fillStyle=g;tCtx.fillRect(n.x-20,n.y-20,40,40);}
+        tCtx.beginPath();tCtx.arc(n.x,n.y,r,0,Math.PI*2);tCtx.fillStyle=n.color;tCtx.fill();tCtx.strokeStyle='rgba(0,0,0,.4)';tCtx.lineWidth=1;tCtx.stroke();
+        tCtx.font=n.center?'bold 9px "Space Grotesk"':'8px "JetBrains Mono"';tCtx.fillStyle='#8fa3c4';tCtx.textAlign='center';tCtx.fillText(n.label,n.x,n.y+r+12);
+      }
+      tAnim=requestAnimationFrame(animTopo);
+    }
+    function addTopoParticle(src,dst){
+      const tk=Object.values(S.topTalkers).slice(0,CFG.TOPO_MAX);
+      let ti=-1;for(let i=0;i<tk.length;i++){if(tk[i].ip===src||tk[i].ip===dst){ti=i+1;break;}}
+      if(ti<1)ti=rand(1,Math.max(1,tk.length));
+      S.topoParts.push({fi:isInt(src)?0:ti,ti:isInt(src)?ti:0,prog:0,c:isInt(src)?'rgba(0,170,255,.7)':'rgba(0,255,136,.7)'});
+      if(S.topoParts.length>30)S.topoParts.splice(0,5);
+    }
+
+    /* ═══════════════════════════════════════════════════
+       TOASTS
+       ═══════════════════════════════════════════════════ */
+    function toast(msg,type){
+      const c=$('toastContainer'),t=document.createElement('div');
+      t.className='toast toast-'+type;
+      t.innerHTML='<i class="fas fa-'+(type==='danger'?'triangle-exclamation':type==='success'?'circle-check':'circle-exclamation')+'"></i> '+msg;
+      c.appendChild(t);setTimeout(()=>{if(t.parentNode)t.remove();},5000);
+    }
+
+    /* ═══════════════════════════════════════════════════
+       EXPORT CSV
+       ═══════════════════════════════════════════════════ */
+    function exportCSV(){
+      if(!S.packets.length){toast('No packets to export','warning');return;}
+      let csv='No,Time,Source,Destination,Protocol,Length,Info\n';
+      for(const p of S.packets) csv+=`${p.id},${p.time},${p.srcIP||''},${p.dstIP||''},${p.protocol},${p.length},"${(p.info||'').replace(/"/g,'""')}"\n`;
+      const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+      a.download='netscope_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.csv';a.click();
+      toast('Exported '+S.packets.length+' packets','success');
+    }
+
+    /* ═══════════════════════════════════════════════════
+       EVENTS
+       ═══════════════════════════════════════════════════ */
+    function setupEvents(){
+      $('captureBtn').addEventListener('click',toggleCapture);
+      $('pcapInput').addEventListener('change',e=>{if(e.target.files[0])handlePCAPUpload(e.target.files[0]);e.target.value='';});
+      $('exportBtn').addEventListener('click',exportCSV);
+      $('protocolFilter').addEventListener('change',e=>{S.filters.protocol=e.target.value;renderList();});
+      $('searchFilter').addEventListener('input',e=>{S.filters.search=e.target.value;renderList();});
+      $('clearFilters').addEventListener('click',()=>{S.filters.protocol='all';S.filters.search='';$('protocolFilter').value='all';$('searchFilter').value='';renderList();});
+      $('closeDetail').addEventListener('click',()=>{$('detailPanel').classList.add('hidden');S.selId=null;document.querySelectorAll('.pkt-table tr.selected').forEach(t=>t.classList.remove('selected'));});
+      document.addEventListener('keydown',e=>{
+        if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT')return;
+        if(e.code==='Space'){e.preventDefault();toggleCapture();}
+        if(e.code==='Escape'){$('detailPanel').classList.add('hidden');S.selId=null;}
+        if(e.ctrlKey&&e.key==='f'){e.preventDefault();$('searchFilter').focus();}
+      });
+      window.addEventListener('resize',()=>{cancelAnimationFrame(tAnim);initTopo();});
+    }
+
+    /* ═══════════════════════════════════════════════════
+       PERIODIC UPDATES
+       ═══════════════════════════════════════════════════ */
+    function startPeriodic(){
+      setInterval(()=>{if(!S.packets.length)return;updateTopTalkers();updateStats();renderThreats();},700);
+      setInterval(()=>{if(!S.packets.length)return;updateCharts();},CFG.CHART_INT);
+    }
+
+    /* ═══════════════════════════════════════════════════
+       INIT
+       ═══════════════════════════════════════════════════ */
+    function init(){
+      initCharts(); initTopo(); setupEvents(); startPeriodic(); initBackend();
+    }
+    document.readyState==='loading'?document.addEventListener('DOMContentLoaded',init):init();
+  </script>
+</body>
+</html>
