@@ -37,8 +37,8 @@ Built for personal / local use: point it at a network interface, watch traffic f
 ## Setup
 
 ```bash
-git clone <your-repo-url>
-cd netscope-pro
+git clone https://github.com/Nayanbhusari/Packet_analyser.git
+cd Packet_analyser
 pip install -r requirements.txt
 ```
 
